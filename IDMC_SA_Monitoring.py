@@ -75,13 +75,6 @@ login_path = '/login'
 headers = {"Content-Type": "application/json", "Accept": "application/json"}
 
 
-# with open('config_ucb_sbx.json', 'r') as f:
-#     config = json.load(f)
-#     user = config['username']
-#     pwd = config['password']
-#     server_url=config['server_url']
-#     agent_id=config['agent_id']
-
 #Decode Password
 def decrypt_password(encrypted_password, encryption_key):
     fernet = Fernet(encryption_key.encode())
@@ -96,29 +89,28 @@ def get_session_id():
                        headers=headers, data=json.dumps(creds))
 
     if result.status_code == 200:
-        print(f"Login Successful, you are logged in as {user}")    
+        #print(f"Login Successful, you are logged in as {user}")    
         return result.json()['userInfo']['sessionId']
     else:
         raise Exception(f"Login failed: {result.text}")
-'''
+
 #Send Email Alert
-def send_alert(subject):
-    org="UCB-DEV"
+'''
+def send_alert(subject,name):
+    org="UCB-SBX"
     msg=EmailMessage()
     msg['Subject']=subject
     msg['From']='Anshuj.Verma@ucb.com'
     msg['To']=config['SMTP']['email_recipients']
     email_body = f"""\
-    Hi Team,
+Hi Team,
 
-    This is to notify you that a service disruption has been detected on the Secure Agent {host_name}.
+This is to notify you that there have been service disruption detected on the Secure Agent {host_name} for the service {name}.
     
-    Please review the Secure Agent status on {org} ORG and take the necessary action to restore
-    normal operations.
-                
-                
-    Regards,  
-    IDMC Platform 
+Please review the Secure Agent status on {org} ORG and take the necessary action to restore normal operations.
+                            
+Regards,  
+IDMC Platform 
     """
     msg.set_content(email_body)
     with smtplib.SMTP(config['SMTP']['smtp_server'], 25) as smtp:
@@ -129,20 +121,30 @@ def get_agent_status():
     ag_url = f"{server_url}/api/v2/agent/details/{agent_id}"
     response = requests.get(url=ag_url, headers=headers)
     data=response.json()
-    if response.status_code == 200:
-        print("Entering into if clause")
-        raw_data=data["agentEngines"]
-        statuses=[ d["agentEngineStatus"]["status"] for d in raw_data ]
     
-        # statuses = statuses_il.get("agentEngineStatus", [])
-        
-        print(statuses)
-        for status in statuses:
-            if status != "RUNNING":
-                return status
+    if response.status_code == 200:
+        #print("Entering into if clause")
+        raw_data=data["agentEngines"]
+        nm=[ c["agentEngineStatus"]["appname"] for c in raw_data]
+        statuses=[ d["agentEngineStatus"]["status"] for d in raw_data ]
+        #print(statuses)
+        result_lst=list(zip(nm,statuses))
+        not_running=[]
+        for name,status in result_lst:
+            if status != "RUNNING" :
+                not_running.append((name,status))
+            #     nm=name
+            #     st=status
+            # return nm,st
+        if not_running:
+            return not_running
+        else:
+            return "Running"
+
+       
 
         
-    return "RUNNING"
+    # return "RUNNING"
 
 
 
@@ -158,16 +160,27 @@ if __name__ == "__main__":
 
     while True:
         try:
-            current_status =get_agent_status()
-            print(current_status)
-            if prev_status == "RUNNING" and current_status != "RUNNING":
-                print("⚠️ Secure Agent Status Alert",
-                           f"Secure Agent status changed from RUNNING to {current_status}")
+            status =get_agent_status()
+            print(status)
+            # if isinstance(ct_status,tuple):
+            #     name,current_status=ct_status
+            if isinstance(status,list):
+                for name,ct_status in status:
+                    current_status=ct_status
+                    print(f"⚠Secure Agent status changed from RUNNING to {current_status} for the service {name}")
+            else:
+                #print("The value of current status now when all service are ok ")
+                current_status="RUNNING"
                 
-                # send_alert(f"Secure Agent Service Alert from {host_name} -->>Action Required")
+            #print(current_status)
+            #if prev_status == "RUNNING" and current_status != "RUNNING":
+            # if current_status != "RUNNING":
+            #     print(f"⚠Secure Agent status changed from RUNNING to {current_status} for the service {name}")
+                
+                # send_alert(f"Secure Agent Service Alert from {host_name} -->>Action Required",name)
             prev_status = current_status
         except Exception as e:
-            print(f"Error: {e}")
+            #print(f"Error: {e}")
             session_id = get_session_id()  # Retry session fetch
         time.sleep(interval)
       
